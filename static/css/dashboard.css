@@ -1,0 +1,251 @@
+/* dashboard.css — Driver Drowsiness Detection dashboard styles */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #070a0f;
+  color: #e2e8f0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.db {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 16px;
+}
+
+/* ── Top bar ──────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid #2a2d35;
+  margin-bottom: 14px;
+}
+
+.logo { font-size: 13px; color: #a0a9b8; letter-spacing: 0.05em; }
+.logo-accent { color: #00ff88; }
+
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.session-label { font-size: 11px; color: #5a6070; }
+
+.status-pill {
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  transition: all 0.4s ease;
+}
+
+.status-pill.NORMAL { background: #0a2e1c; color: #00ff88; border: 0.5px solid #00ff88; }
+.status-pill.DROWSY { background: #2e1f00; color: #f5a623; border: 0.5px solid #f5a623; }
+.status-pill.DANGER {
+  background: #2e0808; color: #ff3b3b; border: 0.5px solid #ff3b3b;
+  animation: danger-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes danger-pulse { from { opacity: 1; } to { opacity: 0.6; } }
+
+/* ── Layout grid ─────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.left-col  { display: flex; flex-direction: column; gap: 10px; }
+.right-col { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Panels ──────────────────────────────────────────────────── */
+.panel {
+  background: #161a24;
+  border: 0.5px solid #2a2d35;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.panel-label {
+  font-size: 10px;
+  color: #5a6070;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ── Gauge ───────────────────────────────────────────────────── */
+.gauge-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#score-arc    { transition: stroke-dashoffset 0.7s ease; }
+#needle       { transition: transform 0.7s ease; }
+
+/* ── Metric rows ─────────────────────────────────────────────── */
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 0.5px solid #1e2230;
+}
+.metric-row:last-child { border-bottom: none; }
+
+.m-label { font-size: 11px; color: #5a6070; }
+.m-val   { font-size: 13px; font-weight: 500; }
+.m-val.ear   { color: #378add; }
+.m-val.mar   { color: #f5a623; }
+.m-val.yaw   { color: #9b8fd4; }
+.m-val.pitch { color: #5dcaa5; }
+.m-val.muted { color: #a0a9b8; }
+
+/* ── Stat grid ───────────────────────────────────────────────── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-card {
+  background: #0f1117;
+  border: 0.5px solid #2a2d35;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.stat-num      { font-size: 22px; font-weight: 500; }
+.stat-num.blue  { color: #378add; }
+.stat-num.amber { color: #f5a623; }
+.stat-num.red   { color: #ff3b3b; }
+.stat-num.teal  { color: #5dcaa5; }
+.stat-lbl      { font-size: 10px; color: #5a6070; margin-top: 2px; }
+
+/* ── Video feed ──────────────────────────────────────────────── */
+.feed-panel { padding: 12px; }
+
+.live-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #5a6070;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  background: #00ff88;
+  border-radius: 50%;
+  animation: live-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.video-feed {
+  width: 100%;
+  border-radius: 6px;
+  display: block;
+  border: 0.5px solid #2a2d35;
+  background: #0a0c12;
+  min-height: 200px;
+}
+
+/* ── Chart ───────────────────────────────────────────────────── */
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.legend { display: flex; gap: 12px; font-size: 10px; color: #5a6070; }
+.leg-item { display: flex; align-items: center; gap: 4px; }
+.leg-dot  { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 130px;
+}
+
+/* ── Event log ───────────────────────────────────────────────── */
+.event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0.5px solid #2a2d35;
+  border-radius: 6px;
+  color: #a0a9b8;
+  font-size: 11px;
+  padding: 5px 10px;
+  text-decoration: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.export-btn:hover { border-color: #378add; color: #378add; }
+
+.table-scroll { overflow-x: auto; }
+
+.event-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  min-width: 420px;
+}
+
+.event-table th {
+  text-align: left;
+  color: #5a6070;
+  font-weight: 400;
+  padding: 4px 8px;
+  border-bottom: 0.5px solid #2a2d35;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.event-table td {
+  padding: 6px 8px;
+  border-bottom: 0.5px solid #1e2230;
+  color: #a0a9b8;
+}
+
+.event-table tr:last-child td { border-bottom: none; }
+.empty-row { text-align: center; color: #5a6070; padding: 16px !important; }
+
+.evt-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+.evt-badge.NORMAL { background: #0a2e1c; color: #00ff88; }
+.evt-badge.DROWSY { background: #2e1f00; color: #f5a623; }
+.evt-badge.DANGER { background: #2e0808; color: #ff3b3b; }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+}

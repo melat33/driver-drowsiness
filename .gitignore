@@ -10,4 +10,4 @@ venv/
 *.egg-info/
 dist/
 build/
-env.example/
+/env.example

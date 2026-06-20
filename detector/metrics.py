@@ -18,7 +18,14 @@ import numpy as np
 
 LEFT_EYE_IDX  = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380]
-MOUTH_IDX     = [61, 291, 13, 14, 17, 0]
+
+# Outer-lip landmarks — chosen so vertical distance actually swings
+# noticeably between a closed mouth and a wide yawn.
+#   p1 = left mouth corner   (61)
+#   p2 = right mouth corner  (291)
+#   p3 = upper lip, outer top (0)
+#   p4 = lower lip, outer bottom (17)
+MOUTH_IDX     = [61, 291, 0, 17]
 
 # 3D model points of a generic human face (used by solvePnP for head pose).
 # These are world-space coordinates in millimetres, chosen to match the
@@ -87,17 +94,16 @@ def compute_mar(landmarks: np.ndarray) -> float:
     """
     Mouth Aspect Ratio — mirrors the EAR formula applied to mouth landmarks.
 
-    Indices used (from MOUTH_IDX = [61, 291, 13, 14, 17, 0]):
-        p1 = left corner  (61)
-        p2 = right corner (291)
-        p3 = upper lip top (13)
-        p4 = lower lip bottom (14)
-        p5 = chin point (17)     [not used in formula, kept for completeness]
-        p6 = upper outer lip (0)
+    Indices used (from MOUTH_IDX = [61, 291, 0, 17]):
+        p1 = left corner   (61)
+        p2 = right corner  (291)
+        p3 = upper outer lip top (0)
+        p4 = lower outer lip bottom (17)
 
     MAR = |p3-p4| / |p1-p2|
 
-    At rest: ~0.02–0.10. During yawn: spikes above 0.60.
+    At rest: ~0.15–0.30 (outer-lip points sit naturally apart even closed).
+    During yawn: spikes above 0.55-0.65.
 
     Args:
         landmarks: (N, 2) array of pixel coordinates.
@@ -106,7 +112,7 @@ def compute_mar(landmarks: np.ndarray) -> float:
         MAR as a float.
     """
     p = [landmarks[i] for i in MOUTH_IDX]
-    vertical   = _dist(p[2], p[3])   # upper-lip to lower-lip
+    vertical   = _dist(p[2], p[3])   # upper-lip-top to lower-lip-bottom
     horizontal = _dist(p[0], p[1])   # left corner to right corner
     if horizontal == 0:
         return 0.0
@@ -200,8 +206,14 @@ def detect_head_drop(
     """
     Detect a sudden forward head drop by measuring pitch change over a window.
 
-    A normal head movement is gradual. A microsleep head drop is sudden —
-    pitch can change 8–15 degrees in just a few frames.
+    A normal head movement (talking, looking down briefly, mouth motion
+    during speech) is gradual and small. A microsleep head drop is sudden —
+    pitch typically changes 15-25+ degrees within well under a second.
+
+    Note: this returns True on EVERY frame where the condition holds, which
+    is why the caller (FatigueEngine) must apply its own cooldown/debounce
+    before incrementing a counter — otherwise a single physical head-drop
+    event gets counted dozens of times across consecutive frames.
 
     Args:
         pitch_history: list of recent pitch values (newest last).
@@ -209,10 +221,10 @@ def detect_head_drop(
         delta_threshold: minimum pitch drop (degrees) to flag as a drop.
 
     Returns:
-        True if a sudden drop is detected.
+        True if a sudden drop is detected in the current window.
     """
     if len(pitch_history) < window:
         return False
-    recent   = pitch_history[-window:]
-    delta    = recent[-1] - recent[0]   # negative = head dropped forward
+    recent = pitch_history[-window:]
+    delta  = recent[-1] - recent[0]   # negative = head dropped forward
     return delta < -abs(delta_threshold)

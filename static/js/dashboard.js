@@ -1,91 +1,118 @@
 /**
- * dashboard.js — Live dashboard polling and Chart.js trend chart.
- *
- * Polls /status every 1 second to update all metric displays.
- * Polls /events every 5 seconds to refresh the event log table.
- * Maintains a 60-point rolling score history for the trend chart.
+ * dashboard.js — Live polling, dual-ring gauge, sparkbars, FPS counter,
+ * danger flash overlay, Chart.js trend with average line.
  */
 
-// ── Trend chart setup ─────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const MAX_POINTS    = 60;
-const scoreHistory  = new Array(MAX_POINTS).fill(0);
-const chartLabels   = Array.from({ length: MAX_POINTS }, (_, i) => (MAX_POINTS - i) + 's');
+const MAX_POINTS  = 60;
+const ARC_OUTER   = 240;   // outer arc (current score)
+const ARC_INNER   = 196;   // inner arc (session average)
 
-const chartColors = scoreHistory.map(() => '#00ff88');
+// ── State ─────────────────────────────────────────────────────────────────────
+
+const scoreHistory = new Array(MAX_POINTS).fill(0);
+const earHistory   = new Array(8).fill(0.28);   // for sparkbars
+const marHistory   = new Array(8).fill(0.06);
+let   scoreSum     = 0;
+let   scoreCount   = 0;
+let   lastFrameTs  = 0;
+let   frameCount   = 0;
+let   fpsValue     = 0;
+
+// ── Chart.js ──────────────────────────────────────────────────────────────────
 
 const trendCtx = document.getElementById('trendChart').getContext('2d');
 const trendChart = new Chart(trendCtx, {
   type: 'bar',
   data: {
-    labels: chartLabels,
-    datasets: [{
-      data: [...scoreHistory],
-      backgroundColor: [...chartColors],
-      borderWidth: 0,
-      borderRadius: 2,
-    }]
+    labels: Array.from({ length: MAX_POINTS }, (_, i) => (MAX_POINTS - i) + 's'),
+    datasets: [
+      {
+        label: 'Fatigue score',
+        data: [...scoreHistory],
+        backgroundColor: scoreHistory.map(() => '#00e676'),
+        borderWidth: 0,
+        borderRadius: 2,
+        order: 2,
+      },
+      {
+        label: 'Average',
+        data: new Array(MAX_POINTS).fill(0),
+        type: 'line',
+        borderColor: 'rgba(0,212,255,0.4)',
+        borderWidth: 1.5,
+        borderDash: [4, 4],
+        pointRadius: 0,
+        fill: false,
+        order: 1,
+      }
+    ]
   },
   options: {
     responsive: true,
     maintainAspectRatio: false,
-    animation: { duration: 300 },
+    animation: { duration: 250 },
     plugins: {
       legend: { display: false },
       tooltip: {
-        callbacks: {
-          label: ctx => 'Score: ' + ctx.parsed.y.toFixed(0),
+        callbacks: { label: ctx => ctx.datasetIndex === 0
+          ? 'Score: ' + ctx.parsed.y.toFixed(0)
+          : 'Avg: '   + ctx.parsed.y.toFixed(0)
         }
       }
     },
     scales: {
       x: {
-        grid: { color: '#1e2230' },
-        ticks: {
-          color: '#5a6070',
-          font: { size: 9, family: 'monospace' },
-          maxTicksLimit: 7,
-          autoSkip: true,
-        }
+        grid: { color: '#1a2035' },
+        ticks: { color: '#4a5270', font: { size: 8, family: "'JetBrains Mono',monospace" }, maxTicksLimit: 8, autoSkip: true }
       },
       y: {
-        min: 0,
-        max: 100,
-        grid: { color: '#1e2230' },
-        ticks: {
-          color: '#5a6070',
-          font: { size: 9, family: 'monospace' },
-          stepSize: 25,
-        }
+        min: 0, max: 100,
+        grid: { color: '#1a2035' },
+        ticks: { color: '#4a5270', font: { size: 8, family: "'JetBrains Mono',monospace" }, stepSize: 25 }
       }
     }
   }
 });
 
+// ── Gauge ─────────────────────────────────────────────────────────────────────
 
-// ── Gauge helpers ─────────────────────────────────────────────────────────────
-
-const ARC_LENGTH = 228;   // total length of the SVG arc path
-
-function updateGauge(score) {
+function updateGauge(score, avg) {
   const pct    = Math.min(score, 100) / 100;
-  const offset = ARC_LENGTH - (pct * ARC_LENGTH);
-  const angle  = -90 + (pct * 180);   // −90° = far left, +90° = far right
+  const avgPct = Math.min(avg, 100)   / 100;
 
-  document.getElementById('score-arc').style.strokeDashoffset = offset.toFixed(1);
+  document.getElementById('score-arc').style.strokeDashoffset = (ARC_OUTER - pct * ARC_OUTER).toFixed(1);
+  document.getElementById('avg-arc').style.strokeDashoffset   = (ARC_INNER - avgPct * ARC_INNER).toFixed(1);
+
+  const angle = -90 + (pct * 180);
   document.getElementById('needle').style.transform = `rotate(${angle.toFixed(1)}deg)`;
-  document.getElementById('score-text').textContent = Math.round(score);
+  document.getElementById('score-text').textContent  = Math.round(score);
+  document.getElementById('avg-label').textContent   = avg > 0 ? avg.toFixed(0) : '—';
 }
 
+// ── Status pill + danger overlay ──────────────────────────────────────────────
 
-// ── Status pill ───────────────────────────────────────────────────────────────
-
-function updatePill(status) {
-  const pill = document.getElementById('main-pill');
-  pill.textContent  = status;
-  pill.className    = `status-pill ${status}`;
+function updateStatus(status) {
+  const pill    = document.getElementById('main-pill');
+  const overlay = document.getElementById('danger-overlay');
+  pill.textContent = status;
+  pill.className   = `status-pill ${status}`;
+  overlay.className = status === 'DANGER' ? 'active' : '';
 }
 
+// ── Sparkbars ─────────────────────────────────────────────────────────────────
+
+function updateSpark(id, history, color) {
+  const bars = document.querySelectorAll(`#${id} .spark-bar`);
+  const max  = Math.max(...history, 0.001);
+  bars.forEach((bar, i) => {
+    const pct = Math.round((history[i] / max) * 100);
+    bar.style.height     = pct + '%';
+    bar.style.background = color;
+    bar.style.opacity    = 0.4 + (i / bars.length) * 0.6;
+  });
+}
 
 // ── Score history + chart ─────────────────────────────────────────────────────
 
@@ -93,23 +120,42 @@ function pushScore(score) {
   scoreHistory.shift();
   scoreHistory.push(score);
 
-  const newColors = scoreHistory.map(v =>
-    v >= 70 ? '#ff3b3b' : v >= 40 ? '#f5a623' : '#00ff88'
+  scoreSum   += score;
+  scoreCount += 1;
+  const avg   = scoreCount > 0 ? scoreSum / scoreCount : 0;
+
+  trendChart.data.datasets[0].data            = [...scoreHistory];
+  trendChart.data.datasets[0].backgroundColor = scoreHistory.map(v =>
+    v >= 70 ? '#ff3d3d' : v >= 40 ? '#ffab40' : '#00e676'
   );
+  trendChart.data.datasets[1].data = new Array(MAX_POINTS).fill(parseFloat(avg.toFixed(1)));
+  trendChart.update('none');
 
-  trendChart.data.datasets[0].data             = [...scoreHistory];
-  trendChart.data.datasets[0].backgroundColor  = newColors;
-  trendChart.update('none');   // skip animation for smoother live updates
+  return avg;
 }
 
+// ── FPS counter (measures image reload rate as proxy for stream fps) ──────────
 
-// ── DOM update helpers ────────────────────────────────────────────────────────
+const feedImg = document.getElementById('video-feed');
+feedImg.addEventListener('load', () => {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFrameTs >= 1000) {
+    fpsValue   = frameCount;
+    frameCount = 0;
+    lastFrameTs = now;
+    const label = fpsValue + ' fps';
+    document.getElementById('fps-badge').textContent = label;
+    document.getElementById('fps-info').textContent  = label;
+  }
+});
 
-function setText(id, value) {
+// ── DOM helpers ───────────────────────────────────────────────────────────────
+
+function setText(id, val) {
   const el = document.getElementById(id);
-  if (el) el.textContent = value;
+  if (el) el.textContent = val;
 }
-
 
 // ── /status polling ───────────────────────────────────────────────────────────
 
@@ -117,39 +163,46 @@ async function pollStatus() {
   try {
     const res  = await fetch('/status');
     if (!res.ok) return;
-    const data = await res.json();
+    const d    = await res.json();
 
-    const score  = data.fatigue_score ?? 0;
-    const status = data.status ?? 'NORMAL';
+    const score  = d.fatigue_score ?? 0;
+    const status = d.status ?? 'NORMAL';
 
-    // Gauge + pill
-    updateGauge(score);
-    updatePill(status);
+    const avg = pushScore(score);
+    updateGauge(score, avg);
+    updateStatus(status);
+
+    // EAR sparkbar
+    if (d.ear != null) {
+      earHistory.shift(); earHistory.push(d.ear);
+      updateSpark('spark-ear', earHistory, '#00d4ff');
+    }
+
+    // MAR sparkbar
+    if (d.mar != null) {
+      marHistory.shift(); marHistory.push(d.mar);
+      updateSpark('spark-mar', marHistory, '#ffab40');
+    }
 
     // Live signals
-    setText('v-ear',    data.ear   != null ? data.ear.toFixed(3)   : '—');
-    setText('v-mar',    data.mar   != null ? data.mar.toFixed(3)   : '—');
-    setText('v-yaw',    data.yaw   != null ? data.yaw.toFixed(1) + '°' : '—');
-    setText('v-pitch',  data.pitch != null ? data.pitch.toFixed(1) + '°' : '—');
-    setText('v-blinks', data.blinks   ?? 0);
-    setText('v-yawns',  data.yawns    ?? 0);
-    setText('v-drops',  data.head_drops ?? 0);
-    setText('v-cf',     data.blinks   ?? 0);
+    setText('v-ear',    d.ear   != null ? d.ear.toFixed(3)   : '—');
+    setText('v-mar',    d.mar   != null ? d.mar.toFixed(3)   : '—');
+    setText('v-yaw',    d.yaw   != null ? d.yaw.toFixed(1) + '°' : '—');
+    setText('v-pitch',  d.pitch != null ? d.pitch.toFixed(1) + '°' : '—');
+    setText('v-blinks', d.blinks      ?? 0);
+    setText('v-yawns',  d.yawns       ?? 0);
+    setText('v-yawns-recent', d.yawns_recent ?? 0);
+    setText('v-drops',  d.head_drops  ?? 0);
+    setText('v-cf',     d.blinks      ?? 0);
 
     // Session totals
-    setText('s-blinks', data.blinks       ?? 0);
-    setText('s-yawns',  data.yawns        ?? 0);
-    setText('s-alerts', data.alerts_fired ?? 0);
-    setText('s-drops',  data.head_drops   ?? 0);
+    setText('s-blinks', d.blinks       ?? 0);
+    setText('s-yawns',  d.yawns        ?? 0);
+    setText('s-alerts', d.alerts_fired ?? 0);
+    setText('s-drops',  d.head_drops   ?? 0);
 
-    // Trend chart
-    pushScore(score);
-
-  } catch (_) {
-    // Network error — stay silent, try again next tick
-  }
+  } catch (_) {}
 }
-
 
 // ── /events polling ───────────────────────────────────────────────────────────
 
@@ -158,10 +211,10 @@ async function pollEvents() {
     const res    = await fetch('/events');
     if (!res.ok) return;
     const events = await res.json();
+    const tbody  = document.getElementById('event-tbody');
 
-    const tbody = document.getElementById('event-tbody');
     if (!events.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No events yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-row">Monitoring — no events yet</td></tr>';
       return;
     }
 
@@ -169,32 +222,28 @@ async function pollEvents() {
       <tr>
         <td>${ev.timestamp ?? '—'}</td>
         <td>${ev.event_type ?? '—'}</td>
-        <td>${ev.fatigue_score != null ? ev.fatigue_score.toFixed(0) : '—'}</td>
+        <td>${ev.fatigue_score != null ? parseFloat(ev.fatigue_score).toFixed(0) : '—'}</td>
         <td><span class="evt-badge ${ev.status ?? ''}">${ev.status ?? '—'}</span></td>
-        <td>${ev.ear != null ? ev.ear.toFixed(3) : '—'}</td>
-        <td>${ev.mar != null ? ev.mar.toFixed(3) : '—'}</td>
-      </tr>
-    `).join('');
-
+        <td>${ev.ear != null ? parseFloat(ev.ear).toFixed(3) : '—'}</td>
+        <td>${ev.mar != null ? parseFloat(ev.mar).toFixed(3) : '—'}</td>
+      </tr>`).join('');
   } catch (_) {}
 }
-
 
 // ── Session timer ─────────────────────────────────────────────────────────────
 
 const sessionStart = Date.now();
-
 function updateTimer() {
-  const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
-  const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
-  const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
-  const s = String(elapsed % 60).padStart(2, '0');
+  const t = Math.floor((Date.now() - sessionStart) / 1000);
+  const h = String(Math.floor(t / 3600)).padStart(2, '0');
+  const m = String(Math.floor((t % 3600) / 60)).padStart(2, '0');
+  const s = String(t % 60).padStart(2, '0');
   setText('session-timer', `${h}:${m}:${s}`);
 }
 
+// ── Boot ──────────────────────────────────────────────────────────────────────
 
-// ── Start polling ─────────────────────────────────────────────────────────────
-
+lastFrameTs = performance.now();
 pollStatus();
 pollEvents();
 setInterval(pollStatus,  1000);

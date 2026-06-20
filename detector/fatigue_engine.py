@@ -46,6 +46,7 @@ class DriverState:
     status:        str   = "NORMAL"   # "NORMAL" | "DROWSY" | "DANGER"
     blinks:        int   = 0
     yawns:         int   = 0
+    yawns_recent:  int   = 0   # yawns within the rolling YAWN_WINDOW_SEC
     head_drops:    int   = 0
     alerts_fired:  int   = 0
     no_face:       bool  = False
@@ -87,8 +88,15 @@ class FatigueEngine:
         self._drops      = 0
         self._alerts     = 0
 
+        # Timestamps of recent yawns, used for rolling-window yawn-count scoring.
+        self._yawn_timestamps: deque[float] = deque(maxlen=50)
+
         # Pitch history for head-drop detection
         self._pitch_history: deque[float] = deque(maxlen=config.HEAD_DROP_WINDOW + 2)
+        # Debounce: only count one head-drop event per cooldown window,
+        # since detect_head_drop() returns True on every frame the
+        # condition holds, not just the first frame of the event.
+        self._last_drop_time = 0.0
 
         # Face mesh detector (lives on this thread)
         self._detector = FaceMeshDetector()
@@ -130,6 +138,7 @@ class FatigueEngine:
                 no_face=True,
                 blinks=self._blinks,
                 yawns=self._yawns,
+                yawns_recent=self._count_recent_yawns(),
                 head_drops=self._drops,
                 alerts_fired=self._alerts,
             )
@@ -147,18 +156,20 @@ class FatigueEngine:
         )
 
         # ── Update counters ───────────────────────────────────────────────────
-        ear_score  = self._update_ear(ear)
-        mar_score  = self._update_mar(mar)
-        pose_score = self._update_pose(yaw, pitch)
-        drop_score = self._update_drop(head_drop)
+        ear_score        = self._update_ear(ear)
+        mar_score        = self._update_mar(mar)
+        yawn_count_score = self._update_yawn_count()
+        pose_score       = self._update_pose(yaw, pitch)
+        drop_score       = self._update_drop(head_drop)
 
         # ── Compute fatigue score ─────────────────────────────────────────────
         # Each sub-score is 0.0–1.0; weighted sum then scaled to 0–100.
         raw = (
-            ear_score  * config.WEIGHT_EAR  +
-            mar_score  * config.WEIGHT_MAR  +
-            pose_score * config.WEIGHT_POSE +
-            drop_score * config.WEIGHT_DROP
+            ear_score        * config.WEIGHT_EAR        +
+            mar_score         * config.WEIGHT_MAR        +
+            yawn_count_score  * config.WEIGHT_YAWN_COUNT +
+            pose_score        * config.WEIGHT_POSE       +
+            drop_score        * config.WEIGHT_DROP
         )
         fatigue_score = min(raw * 100.0, 100.0)
 
@@ -177,6 +188,7 @@ class FatigueEngine:
             status=status,
             blinks=self._blinks,
             yawns=self._yawns,
+            yawns_recent=self._count_recent_yawns(),
             head_drops=self._drops,
             alerts_fired=self._alerts,
         )
@@ -201,17 +213,45 @@ class FatigueEngine:
         return 0.0
 
     def _update_mar(self, mar: float) -> float:
-        """Returns proportional score for mouth openness above threshold."""
+        """
+        Returns proportional score for momentary mouth openness above threshold.
+        Records a timestamp each time a full yawn event completes, which feeds
+        the separate cumulative yawn-count scorer below.
+        """
         if mar > config.MAR_THRESHOLD:
             self._consec_yawn += 1
         else:
             if self._consec_yawn >= config.MAR_CONSEC_FRAMES:
                 self._yawns += 1
+                self._yawn_timestamps.append(time.time())
             self._consec_yawn = 0
 
         if self._consec_yawn >= config.MAR_CONSEC_FRAMES:
             return min((mar - config.MAR_THRESHOLD) / 0.4, 1.0)
         return 0.0
+
+    def _count_recent_yawns(self) -> int:
+        """Number of yawns within the rolling YAWN_WINDOW_SEC window."""
+        cutoff = time.time() - config.YAWN_WINDOW_SEC
+        return sum(1 for t in self._yawn_timestamps if t >= cutoff)
+
+    def _update_yawn_count(self) -> float:
+        """
+        Cumulative fatigue contribution from repeated yawning.
+
+        Unlike _update_mar (which only scores the CURRENT frame's mouth
+        openness), this scores based on HOW MANY yawns have happened
+        recently — because someone who has yawned 6 times in 5 minutes is
+        fatigued even in the seconds between yawns, when MAR is back to
+        baseline. This is what makes yawn count actually move the needle.
+        """
+        recent = self._count_recent_yawns()
+        if recent <= 0:
+            return 0.0
+        # Linear ramp: 0 at YAWN_COUNT_DROWSY-1, 1.0 at YAWN_COUNT_DANGER
+        span = max(config.YAWN_COUNT_DANGER - config.YAWN_COUNT_DROWSY, 1)
+        progress = (recent - (config.YAWN_COUNT_DROWSY - 1)) / span
+        return max(0.0, min(progress, 1.0))
 
     def _update_pose(self, yaw: float, pitch: float) -> float:
         """Returns score based on how far head pose deviates from forward-facing."""
@@ -231,8 +271,22 @@ class FatigueEngine:
         return 0.0
 
     def _update_drop(self, drop: bool) -> float:
-        """Binary: head drop detected → 1.0, else 0.0. Increments counter."""
-        if drop:
+        """
+        Binary: head drop detected -> 1.0, else 0.0.
+
+        Applies a cooldown debounce before incrementing the counter, since
+        detect_head_drop() returns True on every frame the pitch-delta
+        condition holds (often for several consecutive frames during one
+        physical drop). Without debouncing, a single real head-drop event
+        gets counted dozens of times — which is the root cause of the
+        "333 head drops in 9 minutes" bug.
+        """
+        if not drop:
+            return 0.0
+
+        now = time.time()
+        if now - self._last_drop_time >= config.HEAD_DROP_COOLDOWN_SEC:
             self._drops += 1
-            return 1.0
-        return 0.0
+            self._last_drop_time = now
+
+        return 1.0

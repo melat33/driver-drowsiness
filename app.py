@@ -106,10 +106,11 @@ def _draw_overlay(frame: "np.ndarray", state) -> "np.ndarray":
         (f"EAR: {s.ear:.3f}",             (10, 30),  0.6, (255, 255, 0)),
         (f"Closed Frames: {s.blinks}",     (10, 55),  0.55, (0, 255, 0)),
         (f"MAR: {s.mar:.3f}",             (10, 85),  0.6, (0, 140, 255)),
-        (f"Yaw: {s.yaw:.1f}",             (10, 110), 0.55, (255, 0, 255)),
-        (f"Pitch: {s.pitch:.1f}",         (10, 135), 0.55, (255, 0, 255)),
-        (f"Fatigue Score: {s.fatigue_score:.0f}", (10, 165), 0.65, colour),
-        (f"Status: {s.status}",            (10, 195), 0.75, colour),
+        (f"Yawns (5min): {s.yawns_recent}/{s.yawns}", (10, 110), 0.55, (0, 140, 255)),
+        (f"Yaw: {s.yaw:.1f}",             (10, 135), 0.55, (255, 0, 255)),
+        (f"Pitch: {s.pitch:.1f}",         (10, 160), 0.55, (255, 0, 255)),
+        (f"Fatigue Score: {s.fatigue_score:.0f}", (10, 190), 0.65, colour),
+        (f"Status: {s.status}",            (10, 220), 0.75, colour),
     ]
 
     for text, pos, scale, col in lines:
@@ -189,7 +190,7 @@ def status():
     data = state.to_dict()
 
     # Fire alerts (non-blocking — AlertSystem uses short-lived threads)
-    alerts.check_and_fire(data["fatigue_score"], data["status"])
+    alerts.check_and_fire(data["fatigue_score"], data["status"], data.get("yawns_recent", 0))
 
     # Log state transitions
     logger.check_and_log(data)

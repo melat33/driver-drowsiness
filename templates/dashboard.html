@@ -3,17 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Driver Drowsiness Detection</title>
+  <title>Driver Drowsiness Detection · DDD</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </head>
 <body>
+
+  <!-- Full-viewport danger border flash -->
+  <div id="danger-overlay"></div>
+
   <div class="db">
     <header class="topbar">
-      <div class="logo"><span class="logo-accent">DDD</span> · Drowsiness Detection System</div>
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+            <circle cx="12" cy="8" r="1.5" fill="#00d4ff" stroke="none"/>
+          </svg>
+        </div>
+        <span><span class="logo-accent">DDD</span> · Driver Drowsiness Detection</span>
+      </div>
       <div class="topbar-right">
-        <span class="session-label" id="session-timer">00:00:00</span>
-        <span class="status-pill" id="main-pill">NORMAL</span>
+        <div class="sys-info">
+          <span><div class="sys-dot"></div>System online</span>
+          <span>Session <span id="session-timer">00:00:00</span></span>
+          <span id="fps-info">— fps</span>
+        </div>
+        <span class="status-pill NORMAL" id="main-pill">NORMAL</span>
       </div>
     </header>
 
@@ -22,53 +38,122 @@
       <!-- ── Left column ───────────────────────────────────────── -->
       <aside class="left-col">
 
+        <!-- Dual-ring fatigue gauge -->
         <section class="panel gauge-wrap" aria-label="Fatigue score gauge">
           <p class="panel-label">Fatigue score</p>
-          <svg width="180" height="140" viewBox="0 0 180 140" role="img" aria-label="Circular fatigue gauge">
+          <svg width="182" height="148" viewBox="0 0 182 148" role="img" aria-label="Dual-ring fatigue gauge showing current score and session average">
             <defs>
               <linearGradient id="arc-grad" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%"   stop-color="#00ff88"/>
-                <stop offset="55%"  stop-color="#f5a623"/>
-                <stop offset="100%" stop-color="#ff3b3b"/>
+                <stop offset="0%"   stop-color="#00e676"/>
+                <stop offset="50%"  stop-color="#ffab40"/>
+                <stop offset="100%" stop-color="#ff3d3d"/>
               </linearGradient>
             </defs>
-            <path d="M 22 118 A 72 72 0 0 1 158 118" fill="none" stroke="#1e2230" stroke-width="10" stroke-linecap="round"/>
-            <path id="score-arc" d="M 22 118 A 72 72 0 0 1 158 118"
+            <!-- Outer track (current score) -->
+            <path d="M 18 126 A 76 76 0 0 1 164 126" fill="none" stroke="#1a2035" stroke-width="10" stroke-linecap="round"/>
+            <path id="score-arc" d="M 18 126 A 76 76 0 0 1 164 126"
                   fill="none" stroke="url(#arc-grad)" stroke-width="10"
-                  stroke-linecap="round" stroke-dasharray="228" stroke-dashoffset="228"/>
-            <line id="needle" x1="90" y1="120" x2="90" y2="56"
-                  stroke="#e2e8f0" stroke-width="2.5" stroke-linecap="round"
-                  transform-origin="90 120" transform="rotate(-90)"/>
-            <circle cx="90" cy="120" r="5" fill="#e2e8f0"/>
-            <text id="score-text" x="90" y="102" text-anchor="middle"
-                  font-size="30" font-weight="500" fill="#e2e8f0" font-family="monospace">0</text>
-            <text x="90" y="116" text-anchor="middle" font-size="10"
-                  fill="#5a6070" font-family="monospace">/100</text>
-            <text x="24"  y="132" font-size="9" fill="#00ff88" font-family="monospace">0</text>
-            <text x="80"  y="50"  font-size="9" fill="#f5a623" font-family="monospace">50</text>
-            <text x="151" y="132" font-size="9" fill="#ff3b3b" font-family="monospace">100</text>
+                  stroke-linecap="round" stroke-dasharray="240" stroke-dashoffset="240"/>
+            <!-- Inner track (session average) -->
+            <path d="M 32 126 A 62 62 0 0 1 150 126" fill="none" stroke="#1a2035" stroke-width="5" stroke-linecap="round"/>
+            <path id="avg-arc" d="M 32 126 A 62 62 0 0 1 150 126"
+                  fill="none" stroke="#00d4ff" stroke-width="5" opacity="0.45"
+                  stroke-linecap="round" stroke-dasharray="196" stroke-dashoffset="196"/>
+            <!-- Needle -->
+            <line id="needle" x1="91" y1="128" x2="91" y2="58"
+                  stroke="#e8eaf6" stroke-width="2" stroke-linecap="round"
+                  transform-origin="91 128" transform="rotate(-90)"/>
+            <circle cx="91" cy="128" r="5" fill="#e8eaf6"/>
+            <circle cx="91" cy="128" r="2.5" fill="#060912"/>
+            <!-- Score text -->
+            <text id="score-text" x="91" y="108" text-anchor="middle"
+                  font-size="32" font-weight="600" fill="#e8eaf6" font-family="'JetBrains Mono',monospace">0</text>
+            <text x="91" y="123" text-anchor="middle" font-size="9"
+                  fill="#4a5270" font-family="'JetBrains Mono',monospace">/100</text>
+            <!-- Scale labels -->
+            <text x="20"  y="140" font-size="8" fill="#00e676" font-family="monospace">0</text>
+            <text x="83"  y="52"  font-size="8" fill="#ffab40" font-family="monospace">50</text>
+            <text x="155" y="140" font-size="8" fill="#ff3d3d" font-family="monospace">100</text>
+            <!-- Avg label -->
+            <text x="91" y="138" text-anchor="middle" font-size="8" fill="#4a5270" font-family="monospace">
+              avg <tspan id="avg-label" fill="#00d4ff">—</tspan>
+            </text>
           </svg>
         </section>
 
+        <!-- Live signals with sparkbars -->
         <section class="panel" aria-label="Live sensor signals">
           <p class="panel-label">Live signals</p>
-          <div class="metric-row"><span class="m-label">EAR</span><span class="m-val ear" id="v-ear">—</span></div>
-          <div class="metric-row"><span class="m-label">Closed frames</span><span class="m-val muted" id="v-cf">0</span></div>
-          <div class="metric-row"><span class="m-label">Blinks</span><span class="m-val muted" id="v-blinks">0</span></div>
-          <div class="metric-row"><span class="m-label">MAR</span><span class="m-val mar" id="v-mar">—</span></div>
-          <div class="metric-row"><span class="m-label">Yawns</span><span class="m-val muted" id="v-yawns">0</span></div>
-          <div class="metric-row"><span class="m-label">Yaw</span><span class="m-val yaw" id="v-yaw">—</span></div>
-          <div class="metric-row"><span class="m-label">Pitch</span><span class="m-val pitch" id="v-pitch">—</span></div>
-          <div class="metric-row"><span class="m-label">Head drops</span><span class="m-val muted" id="v-drops">0</span></div>
+
+          <div class="metric-row">
+            <span class="m-label">EAR</span>
+            <div class="m-val-wrap">
+              <div class="spark" id="spark-ear" aria-hidden="true">
+                <div class="spark-bar"></div><div class="spark-bar"></div><div class="spark-bar"></div>
+                <div class="spark-bar"></div><div class="spark-bar"></div><div class="spark-bar"></div>
+              </div>
+              <span class="m-val ear" id="v-ear">—</span>
+            </div>
+          </div>
+
+          <div class="metric-row">
+            <span class="m-label">Closed frames</span>
+            <span class="m-val muted" id="v-cf">0</span>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Blinks</span>
+            <span class="m-val muted" id="v-blinks">0</span>
+          </div>
+
+          <div class="metric-row">
+            <span class="m-label">MAR</span>
+            <div class="m-val-wrap">
+              <div class="spark" id="spark-mar" aria-hidden="true">
+                <div class="spark-bar"></div><div class="spark-bar"></div><div class="spark-bar"></div>
+                <div class="spark-bar"></div><div class="spark-bar"></div><div class="spark-bar"></div>
+              </div>
+              <span class="m-val mar" id="v-mar">—</span>
+            </div>
+          </div>
+
+          <div class="metric-row">
+            <span class="m-label">Yawns</span>
+            <span class="m-val muted" id="v-yawns">0</span>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Yaw</span>
+            <span class="m-val yaw" id="v-yaw">—</span>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Pitch</span>
+            <span class="m-val pitch" id="v-pitch">—</span>
+          </div>
+          <div class="metric-row">
+            <span class="m-label">Head drops</span>
+            <span class="m-val muted" id="v-drops">0</span>
+          </div>
         </section>
 
-        <section class="panel" aria-label="Session summary counts">
+        <!-- Session totals -->
+        <section class="panel" aria-label="Session totals">
           <p class="panel-label">Session totals</p>
           <div class="stat-grid">
-            <div class="stat-card"><div class="stat-num blue" id="s-blinks">0</div><div class="stat-lbl">Blinks</div></div>
-            <div class="stat-card"><div class="stat-num amber" id="s-yawns">0</div><div class="stat-lbl">Yawns</div></div>
-            <div class="stat-card"><div class="stat-num red" id="s-alerts">0</div><div class="stat-lbl">Alerts</div></div>
-            <div class="stat-card"><div class="stat-num teal" id="s-drops">0</div><div class="stat-lbl">Head drops</div></div>
+            <div class="stat-card cyan-card">
+              <div class="stat-num cyan" id="s-blinks">0</div>
+              <div class="stat-lbl">Blinks</div>
+            </div>
+            <div class="stat-card amber-card">
+              <div class="stat-num amber" id="s-yawns">0</div>
+              <div class="stat-lbl">Yawns</div>
+            </div>
+            <div class="stat-card red-card">
+              <div class="stat-num red" id="s-alerts">0</div>
+              <div class="stat-lbl">Alerts</div>
+            </div>
+            <div class="stat-card teal-card">
+              <div class="stat-num teal" id="s-drops">0</div>
+              <div class="stat-lbl">Head drops</div>
+            </div>
           </div>
         </section>
 
@@ -77,32 +162,51 @@
       <!-- ── Right column ──────────────────────────────────────── -->
       <section class="right-col">
 
+        <!-- Live feed -->
         <div class="panel feed-panel">
-          <div class="live-row"><div class="live-dot"></div><span>Live feed</span></div>
-          <img id="video-feed" src="/video_feed" alt="Live webcam feed with facial landmark overlay" class="video-feed">
+          <div class="feed-header">
+            <div class="live-row">
+              <div class="live-dot"></div>
+              <span>Live feed</span>
+            </div>
+            <span class="fps-badge" id="fps-badge">— fps</span>
+          </div>
+          <div class="feed-frame">
+            <img id="video-feed" src="/video_feed"
+                 alt="Live webcam feed with facial landmark overlay"
+                 class="video-feed">
+            <div class="scan-line"></div>
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+          </div>
         </div>
 
+        <!-- Trend chart -->
         <div class="panel chart-panel">
           <div class="chart-header">
-            <p class="panel-label" style="margin:0">Fatigue score — last 60s</p>
+            <p class="panel-label" style="margin:0">Fatigue trend — last 60s</p>
             <div class="legend">
-              <span class="leg-item"><span class="leg-dot" style="background:#00ff88"></span>Normal</span>
-              <span class="leg-item"><span class="leg-dot" style="background:#f5a623"></span>Drowsy</span>
-              <span class="leg-item"><span class="leg-dot" style="background:#ff3b3b"></span>Danger</span>
+              <span class="leg-item"><span class="leg-dot" style="background:#00e676"></span>Normal</span>
+              <span class="leg-item"><span class="leg-dot" style="background:#ffab40"></span>Drowsy</span>
+              <span class="leg-item"><span class="leg-dot" style="background:#ff3d3d"></span>Danger</span>
+              <span class="leg-item"><span class="leg-dot" style="background:#00d4ff;opacity:0.5"></span>Avg</span>
             </div>
           </div>
           <div class="chart-wrap">
             <canvas id="trendChart" role="img"
-              aria-label="Bar chart showing fatigue score over the last 60 seconds. Bars coloured green for normal, amber for drowsy, red for danger.">
+              aria-label="Bar chart of fatigue score over the last 60 seconds, colour-coded by severity level.">
             </canvas>
           </div>
         </div>
 
+        <!-- Event log -->
         <div class="panel event-panel">
           <div class="event-header">
             <p class="panel-label" style="margin:0">Event log</p>
             <a href="/export" class="export-btn" download>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
                    stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
@@ -120,7 +224,7 @@
                 </tr>
               </thead>
               <tbody id="event-tbody">
-                <tr><td colspan="6" class="empty-row">No events yet</td></tr>
+                <tr><td colspan="6" class="empty-row">Monitoring — no events yet</td></tr>
               </tbody>
             </table>
           </div>

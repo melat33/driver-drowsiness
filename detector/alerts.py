@@ -43,17 +43,22 @@ class AlertSystem:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def check_and_fire(self, score: float, status: str) -> None:
+    def check_and_fire(self, score: float, status: str, yawns_recent: int = 0) -> None:
         """
         Called once per frame by the Flask /status route consumer.
-        Fires alerts if score and cooldown conditions are met.
+        Fires alerts if score and cooldown conditions are met, OR if
+        accumulated yawn count alone crosses the danger threshold —
+        someone who has yawned 6+ times in 5 minutes should get warned
+        even if their fatigue score hasn't separately crossed 70.
         """
         now = time.time()
 
-        if score >= config.ALERT_SCORE_TRIGGER:
+        yawn_triggered = yawns_recent >= config.YAWN_COUNT_DANGER
+
+        if score >= config.ALERT_SCORE_TRIGGER or yawn_triggered:
             self._maybe_play_audio(now)
 
-        if status == "DANGER" and config.TELEGRAM_ENABLED:
+        if (status == "DANGER" or yawn_triggered) and config.TELEGRAM_ENABLED:
             self._maybe_send_telegram(now, score)
 
     def fire_test(self) -> dict:

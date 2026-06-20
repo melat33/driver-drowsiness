@@ -18,8 +18,9 @@ EAR_THRESHOLD        = 0.20
 EAR_CONSEC_FRAMES    = 20
 
 # ── MAR (Mouth Aspect Ratio) ──────────────────────────────────────────────────
-# MAR rises above this during a yawn.
-MAR_THRESHOLD        = 0.60
+# MAR rises above this during a yawn. Using outer-lip landmarks now —
+# resting baseline is ~0.15-0.30, so the yawn threshold sits higher than before.
+MAR_THRESHOLD        = 0.55
 MAR_CONSEC_FRAMES    = 15
 
 # ── Head Pose ─────────────────────────────────────────────────────────────────
@@ -29,13 +30,29 @@ ROLL_THRESHOLD       = 20.0
 POSE_CONSEC_FRAMES   = 10
 
 # ── Microsleep (sudden head drop) ────────────────────────────────────────────
-HEAD_DROP_DELTA      = 8.0
-HEAD_DROP_WINDOW     = 5
+# Delta pitch (degrees) measured over HEAD_DROP_WINDOW frames.
+# Raised from 8.0 -> 18.0 and window 5 -> 8 frames: normal head bob/mouth
+# movement was triggering this every ~1.5s at the old sensitivity.
+HEAD_DROP_DELTA      = 18.0
+HEAD_DROP_WINDOW     = 8
+# Minimum seconds between two counted head-drop events (debounce).
+HEAD_DROP_COOLDOWN_SEC = 2.0
+
+# ── Yawn-count based fatigue (NEW) ────────────────────────────────────────────
+# Independent of momentary MAR — escalates fatigue based on how many
+# yawns have accumulated in the session, since repeated yawning is itself
+# a strong fatigue signal even if each individual yawn is brief.
+YAWN_COUNT_DROWSY    = 3    # 3+ yawns in session -> contributes to DROWSY
+YAWN_COUNT_DANGER    = 6    # 6+ yawns in session -> contributes to DANGER
+# Rolling window: only count yawns from the last N seconds (avoids an old
+# yawn from 20 minutes ago still inflating the score).
+YAWN_WINDOW_SEC      = 300  # 5 minutes
 
 # ── Fatigue Score Weights (must sum to 1.0) ───────────────────────────────────
-WEIGHT_EAR           = 0.35
-WEIGHT_MAR           = 0.20
-WEIGHT_POSE          = 0.30
+WEIGHT_EAR           = 0.30
+WEIGHT_MAR           = 0.15   # momentary mouth openness (current frame)
+WEIGHT_YAWN_COUNT    = 0.15   # cumulative yawns this session (NEW)
+WEIGHT_POSE          = 0.25
 WEIGHT_DROP          = 0.15
 
 # ── State Thresholds ─────────────────────────────────────────────────────────
